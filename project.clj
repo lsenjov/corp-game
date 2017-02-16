@@ -1,0 +1,146 @@
+(defproject corp-game "0.1.0-SNAPSHOT"
+  :description "Game prototype"
+  :url "http://example.com/FIXME"
+  :min-lein-version "2.0.0"
+  :dependencies [
+                 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                 ;; Shared Deps
+                 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                 [org.clojure/clojure "1.9.0-alpha10"]
+
+                 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                 ;; Server Deps
+                 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                 [org.clojure/core.async "0.2.391"
+                  :exclusions [org.clojure/tools.reader]]
+
+                 ;; Web Server
+                 [compojure "1.5.1"]
+                 [ring "1.5.0"]
+                 [ring/ring-defaults "0.2.1"]
+                 [ring/ring-anti-forgery "1.0.1"]
+                 [hiccup "1.0.5"]
+
+                 ;; Logging Deps
+                 [com.taoensso/timbre "4.7.4"]
+
+                 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                 ;; Frontend Deps
+                 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+                 [org.clojure/clojurescript "1.9.229"]
+                 [reagent "0.6.0"]
+                 [cljs-ajax "0.5.8"]
+                 ]
+
+  :plugins [[lein-figwheel "0.5.8"]
+            [lein-cljsbuild "1.1.4" :exclusions [[org.clojure/clojure]]]
+            [lein-ring "0.9.7"]
+            [cider/cider-nrepl "0.10.1"]
+            ]
+
+  :ring {:handler corp-game.server.handler/app}
+  :profiles {:ring {:source-paths ["src/clj" "src/cljs"]
+                    }
+
+             :dev {:dependencies [[javax.servlet/servlet-api "2.5"]
+                                  [ring/ring-mock "0.3.0"]
+                                  [org.clojure/test.check "0.9.0"]
+                                  ]
+                   :source-paths ["src/clj" "src/cljs"]
+                   :global-vars {*warn-on-reflection* true
+                                 *assert* true}
+                   }
+             :prod {
+                    :global-vars {*warn-on-reflection* true
+                                  *assert* false}
+                    ;; For spec asserts, not just general asserts
+                    :jvm-opts ["-Dclojure.spec.compile-asserts=false"]
+                    }
+             :uberjar {;:hooks [minify-assets.plugin/hooks]
+                       ;:source-paths ["env/prod/clj"]
+                       :prep-tasks ["compile" ["cljsbuild" "once" "min"]]
+                       :env {:production true}
+                       :aot :all
+                       :uberjar-name "corpgame.jar"
+                       :omit-source true}
+             :uberwar {;:hooks [minify-assets.plugin/hooks]
+                       ;:source-paths ["env/prod/clj"]
+                       :prep-tasks ["compile" ["cljsbuild" "once" "min"]]
+                       :env {:production true}
+                       :aot :all
+                       :uberwar-name "corpgame.war"
+                       :omit-source true}
+             }
+
+  :clean-targets ^{:protect false} ["resources/public/js/compiled" "target"]
+
+  :cljsbuild {:builds
+              [{:id "dev"
+                :source-paths ["src/cljs" "src/cljc"]
+
+                ;; the presence of a :figwheel configuration here
+                ;; will cause figwheel to inject the figwheel client
+                ;; into your build
+                :figwheel {:on-jsload "corp-game.frontend.core/on-js-reload"
+                           ;; :open-urls will pop open your application
+                           ;; in the default browser once Figwheel has
+                           ;; started and complied your application.
+                           ;; Comment this out once it no longer serves you.
+                           ;; Opens on 3000 to go with the ring server
+                           :open-urls ["http://localhost:3000/index.html"]
+                           }
+
+                :compiler {:main corp-game.frontend.core
+                           :asset-path "js/compiled/out"
+                           :output-to "resources/public/js/compiled/frontend.js"
+                           :output-dir "resources/public/js/compiled/out"
+                           :source-map-timestamp true
+                           ;; To console.log CLJS data-structures make sure you enable devtools in Chrome
+                           ;; https://github.com/binaryage/cljs-devtools
+                           :preloads [devtools.preload]}}
+               ;; This next build is an compressed minified build for
+               ;; production. You can build this with:
+               ;; lein cljsbuild once min
+               {:id "min"
+                :source-paths ["src/cljs" "src/cljc"]
+                :compiler {:output-to "resources/public/js/compiled/frontend.js"
+                           :main corp-game.frontend.core
+                           :optimizations :advanced
+                           :pretty-print false}}]}
+
+  :figwheel {;; :http-server-root "public" ;; default and assumes "resources"
+             ;; :server-port 3449 ;; default
+             ;; :server-ip "127.0.0.1"
+
+             :css-dirs ["resources/public/css"] ;; watch and update CSS
+
+             ;; Start an nREPL server into the running figwheel process
+             :nrepl-port 7888
+
+             ;; Server Ring Handler (optional)
+             ;; if you want to embed a ring handler into the figwheel http-kit
+             ;; server, this is for simple ring servers, if this
+
+             ;; doesn't work for you just run your own server :) (see lein-ring)
+
+             ;; :ring-handler corp-game.server.handler/app
+
+             ;; To be able to open files in your editor from the heads up display
+             ;; you will need to put a script on your path.
+             ;; that script will have to take a file path and a line number
+             ;; ie. in  ~/bin/myfile-opener
+             ;; #! /bin/sh
+             ;; emacsclient -n +$2 $1
+             ;;
+             ;; :open-file-command "myfile-opener"
+
+             ;; if you are using emacsclient you can just use
+             ;; :open-file-command "emacsclient"
+
+             ;; if you want to disable the REPL
+             ;; :repl false
+
+             ;; to configure a different figwheel logfile path
+             ;; :server-logfile "tmp/logs/figwheel-logfile.log"
+             }
+  )
