@@ -1,7 +1,7 @@
-(ns corp-game.handler-test
+(ns corp-game.server.handler-test
   (:require [clojure.test :refer :all]
             [ring.mock.request :as mock]
-            [corp-game.handler :refer :all]))
+            [corp-game.server.handler :refer :all]))
 
 (deftest test-app
   (testing "main route"

@@ -35,20 +35,30 @@
   :plugins [[lein-figwheel "0.5.8"]
             [lein-cljsbuild "1.1.4" :exclusions [[org.clojure/clojure]]]
             [lein-ring "0.9.7"]
-            [cider/cider-nrepl "0.10.1"]
+            [cider/cider-nrepl "0.9.1"]
             ]
 
   :ring {:handler corp-game.server.handler/app}
-  :profiles {:ring {:source-paths ["src/clj" "src/cljs"]
+  :profiles {:ring {:source-paths ["src/clj" "src/cljc"]
                     }
 
-             :dev {:dependencies [[javax.servlet/servlet-api "2.5"]
+             :dev {:dependencies [[org.clojure/test.check "0.9.0"]
+                                  [org.clojure/tools.nrepl "0.2.12"]
+
+                                  [javax.servlet/servlet-api "2.5"]
                                   [ring/ring-mock "0.3.0"]
-                                  [org.clojure/test.check "0.9.0"]
+
+                                  [binaryage/devtools "0.8.2"]
+                                  [figwheel-sidecar "0.5.8"]
+                                  [com.cemerick/piggieback "0.2.1"]
                                   ]
-                   :source-paths ["src/clj" "src/cljs"]
+                   :source-paths ["src/clj" "src/cljc"]
                    :global-vars {*warn-on-reflection* true
                                  *assert* true}
+                   :repl-options {; for nREPL dev you really need to limit output
+                                  :init (set! *print-length* 50)
+                                  :nrepl-middleware [cemerick.piggieback/wrap-cljs-repl]}
+                   :caught clj-stacktrace.repl/pst+
                    }
              :prod {
                     :global-vars {*warn-on-reflection* true
