@@ -83,3 +83,4 @@
    :post [(s/assert ::execs execs)]}
   (update-in execs [id ::invested-corps] disj corp-id)
   )
+

@@ -9,29 +9,7 @@
   )
 
 (def ^:final settings
-  {
-   ;; Starting corp productivity
-   :default-productivity 0.2
-   ;; Default dividend payout. Pays this amount of total cash to shareholders daily.
-   :default-dividends (/ 1 1e4)
-   ;; How fast productivity changes. If set to 1, will be equal weighting to current productivity, per day
-   ;; At 1/1000, takes 60 days to rise from 0.2 to ~0.85 when productivity-upkeep is set to 1
-   :productivity-change (/ 1 1e3)
-   ;; How much cash as a percentage of assets goes to EACH upkeep category, paid daily
-   ;; If the ratio is 0.01, and the company has $100 assets, each day the company will pay $1 to each upkeep category.
-   :upkeep-ratio 0.01
-   ;; Companies have a minimum upkeep amount for each category. No matter how small a company gets, it will still bleed a little bit of cash per day.
-   ;; This is also the minimum speed a corporation expands each day
-   :upkeep-minimum 100
-   ;; Possible fields for corporations and their total revenue shares.
-   ;; Revenue is proportional to each other. If a field has 2 shares out of the 20, in each region its total revenue will be 10% of the region
-   :corporation-fields {:media {::title "Media"
-                                ::desc "Media and Video entertainment"
-                                ::revenue-share 1}
-                        :security {::title "Security"
-                                   ::revenue-share 1}
-                        }
-   }
+  h/settings
   )
 
 (s/def ::id ::h/id)
@@ -61,7 +39,7 @@
   )
 ;; Operating theatre of this corporation
 (s/def ::region-id ::h/id)
-(s/def ::corporation
+(s/def ::corp
   (s/keys :req [::id ::corp-name ::assets ::cash ::productivity ::assets-upkeep ::productivity-upkeep ::region-id]))
 
 ;; Map of corporations in a region
@@ -77,7 +55,7 @@
           (s/assert ::corporation-field corporation-field)
           (s/assert ::region-id region-id)
           ]
-    :post [(s/assert ::corporation %)]
+    :post [(s/assert ::corp %)]
     }
    {::id id
     ::corp-name corp-name
@@ -103,14 +81,14 @@
   (assoc corps id (create-corporation id corp-name cash corporation-field region-id))
   )
 
-(defn ^:private tick-corporation-upkeep
+(defn tick-corporation-upkeep
   "Ticks a corporation, by default 1 day.
   Does not include adding revenue to the corporation's coffers"
   ([{::keys [cash assets productivity assets-upkeep productivity-upkeep] :as corporation}
     days]
-   {:pre [(s/assert ::corporation corporation)
+   {:pre [(s/assert ::corp corporation)
           (s/assert ::days days)]
-    :post [(s/assert ::corporation %)]
+    :post [(s/assert ::corp %)]
     }
    (log/trace "tick-corporation-upkeep:" corporation days)
    (let [;; The amount that needs to be expended per upkeep category per day
@@ -159,13 +137,25 @@
   ([corporation]
    (tick-corporation-upkeep corporation 1))
   )
+(defn tick-corporation-upkeep-all
+  "Ticks corporation upkeep for all corporations"
+  [corps days]
+  {:pre [(s/assert ::corps corps)
+         (s/assert ::h/days days)]
+   :post [(s/assert ::corps %)]}
+  (->> corps
+       (map (fn [[k v]] [k (tick-corporation-upkeep v days)]))
+       (reduce merge {})
+       )
+  )
 
 (defn calc-corp-value
-  "Returns a cash value of the total corporation, without weighting for recently bought stocks"
+  "Returns a revenue valuation of the total corporation.
+ Does not weight for recently bought stocks or current cash on hand"
   [{::keys [cash productivity assets] :as corporation}]
-  {:pre [(s/assert ::corporation corporation)]
+  {:pre [(s/assert ::corp corporation)]
    :post [(s/assert ::cash %)]}
-  (* (+ cash assets) productivity)
+  (* assets productivity)
   )
 
 (defn calc-corp-value-by-id
@@ -175,4 +165,113 @@
          (s/assert ::id id)]
    :post [(s/assert ::cash %)]}
   (-> corps (get id) calc-corp-value)
+  )
+
+(defn corp-modify-cash
+  "Modifies the cash amount of a corporation"
+  [corp amount]
+  {:pre [(s/assert ::corp corp)
+         (s/assert ::cash amount)]
+   :post [(s/assert ::corp corp)]}
+  (update-in corp [::cash] #(+ amount %)))
+(defn corp-modify-cash-by-id
+  "Given a corps map and an id, updates the amount of cash in that corporation"
+  [corps id amount]
+  {:pre [(s/assert ::corps corps)
+         (s/assert ::id id)
+         (s/assert ::cash amount)
+         (get corps id) ;; Ensure the corp exists
+         ]
+   :post [(s/assert ::corps corps)]}
+  (update-in corps [id] corp-modify-cash amount))
+(defn corp-modify-cash-by-factor
+  "As corp-modify-cash, but amount is multiplying the size of the corporation by the factor"
+  [corp factor]
+  {:pre [(s/assert ::corp corp)
+         (s/assert number? factor)
+         (pos? factor)
+         ]
+   :post [(s/assert ::corp %)]}
+  (corp-modify-cash corp (* factor (calc-corp-value corp))))
+(defn corp-modify-cash-by-factor-by-id
+  "As corp-modify-cash-by-factor, but in a corps map"
+  [corps id factor]
+  {:pre [(s/assert ::corps corps)
+         (s/assert ::id id)
+         (s/assert number? factor)
+         (pos? factor)
+         ]
+   :post [(s/assert ::corps %)]}
+  (update-in corps [id] corp-modify-cash-by-factor factor))
+
+(defn tick-revenue-by-region-and-field
+  "Given a region, corporation field, map of corporations, and a time passed,
+  will calculate the total revenue per dollar, and assign revenue to those corporations"
+  [corps {::h/keys [region-id] :as region} corporation-field days]
+  {:pre [(s/assert ::corps corps)
+         (s/assert ::h/region region)
+         (s/assert ::corporation-field corporation-field)
+         (s/assert ::h/days days)]
+   :post [(s/assert ::corps %)]}
+  (let [filtered-corps ;; A map of all corporations in that region and in that field
+        (->> corps
+             (filter (fn [[_ v]]
+                       ;; Ensure it's the same region
+                       (and (= region-id (::region-id v))
+                            ;; And in the correct field
+                            (= corporation-field (::corporation-field v))
+                            )
+                       )
+                     )
+             (reduce merge {})
+             )
+        ;; Total revenue for this field
+        field-revenue (h/get-field-share region corporation-field)
+        ;; Total size of all corporations
+        total-corps-size (->> filtered-corps vals (map calc-corp-value) (reduce +) (max 1))
+        ;; How much to multiply a corporation's total value by, max of 1
+        revenue-factor (* days (min 1 (/ field-revenue total-corps-size)))
+        ]
+    (log/trace "tick-revenue-by-region-and-field."
+               "region-id" region-id
+               "field" corporation-field
+               "field-revenue" field-revenue
+               "total-crps-size" total-corps-size
+               "revenue-factor" revenue-factor)
+    (as-> filtered-corps v
+         (keys v)
+         (map (fn [k] #(corp-modify-cash-by-factor-by-id % k revenue-factor)) v)
+         (apply comp v)
+         (v corps)
+         )
+    )
+  )
+(defn tick-revenue-by-region
+  "As tick-revenue-by-region-and-field, but for all fields in a region"
+  [corps region days]
+  {:pre [(s/assert ::corps corps)
+         (s/assert ::h/region region)
+         (s/assert ::h/days days)]
+   :post [(s/assert ::corps %)]}
+  (as-> settings v
+    (get v :all-fields)
+    (map (fn [field] (fn [cs] (tick-revenue-by-region-and-field cs region field days)))
+         v)
+    (apply comp v)
+    (v corps)
+    )
+  )
+(defn tick-revenue
+  "Ticks revenue for all corporations in all regions"
+  [corps regions days]
+  {:pre [(s/assert ::corps corps)
+         (s/assert ::h/regions regions)
+         (s/assert ::h/days days)]
+   :post [(s/assert ::corps corps)]}
+  (as-> regions v
+    (vals v)
+    (map (fn [region] (fn [cs] (tick-revenue-by-region cs region days))) v)
+    (apply comp v)
+    (v corps)
+    )
   )

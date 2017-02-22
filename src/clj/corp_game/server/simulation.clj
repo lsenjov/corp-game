@@ -37,7 +37,7 @@
                           :validator #(s/assert ::corps/corps %)
                           )
   )
-(defn add-new-corporation
+(defn corp-add-new
   "Generates and adds a new corporation. Returns the new corporation"
   [corp-name cash corporation-field region-id]
   (dosync
@@ -47,6 +47,25 @@
         (get id)
         )
       )
+    )
+  )
+(defn corp-remove
+  "Removes a corporation from the corps ref.
+  Does not remove references in execs.
+  Returns the current corps map"
+  [corp-id]
+  {:pre [(s/assert ::corps/id corp-id)]
+   :post [(s/assert ::corps/corps %)]}
+  (dosync
+    (alter corps dissoc corp-id)
+    )
+  )
+(defn corp-tick-upkeep
+  "Ticks the upkeep of all corporations, returns the corps map"
+  [days]
+  {:post [(s/assert ::corps/corps %)]}
+  (dosync
+    (alter corps corps/tick-corporation-upkeep-all days)
     )
   )
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -113,3 +132,41 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; COMBINED FUNCTIONS
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+(defn tick-all-revenue
+  "Ticks the revenue for all corporations in all regions.
+  Returns the corps map"
+  [days]
+  {:pre [(s/assert ::h/days days)]
+   :post [(s/assert ::corps/corps %)]}
+  (dosync
+    (alter corps corps/tick-revenue @regions days)
+    )
+  )
+(defn tick-all
+  "Performs revenue then upkeep step on corps. Returns corp map"
+  [days]
+  {:post [(s/assert ::corps/corps %)]}
+  (dosync
+    (tick-all-revenue days)
+    (corp-tick-upkeep days)
+    )
+  )
+
+(comment
+  "Dev testing bits"
+  (log/set-level! :info)
+  (log/set-level! :trace)
+  (clojure.stacktrace/print-stack-trace *e)
+  (clojure.stacktrace/print-cause-trace *e)
+  (tick-all-revenue 1)
+  (tick-all 1)
+  (->> (repeatedly 500 (partial tick-all 10))
+       (last)
+       (map (fn [[k v]] [k (::corps/cash v)]))
+       (reduce merge {})
+       )
+  (deref regions)
+  (add-new-region "testname" 2e3)
+  (deref corps)
+  (corp-add-new "testcorp" 1e4 :media 0)
+  )
